@@ -1,0 +1,578 @@
+---
+title: "Final Exam"
+author: "Akhil Gupta"
+date: "December 17, 2017"
+output: word_document
+---
+
+```{r}
+library(quantmod)
+library(PerformanceAnalytics)
+library(quadprog)
+library(xts)
+library(zoo)
+
+```
+# Step1: Create Portfolio of 5 companies
+```{r}
+#Microsoft
+data.MSFT <- getSymbols("MSFT", from = "2012-12-31", to = "2015-12-31", auto.assign = FALSE)
+data.MSFT <- to.monthly(data.MSFT)
+ret.MSFT <- Return.calculate(data.MSFT$data.MSFT.Adjusted)
+
+#Tesla
+data.TSLA <- getSymbols("TSLA", from = "2012-12-31", to = "2015-12-31", auto.assign = FALSE)
+data.TSLA <- to.monthly(data.TSLA)
+ret.TSLA <- Return.calculate(data.TSLA$data.TSLA.Adjusted)
+
+#Google
+data.GOOGL <- getSymbols("GOOGL", from = "2012-12-31", to = "2015-12-31", auto.assign = FALSE)
+data.GOOGL <- to.monthly(data.GOOGL)
+ret.GOOGL <- Return.calculate(data.GOOGL$data.GOOGL.Adjusted)
+
+#Texas Instruments
+data.TXN <- getSymbols("TXN", from = "2012-12-31", to = "2015-12-31", auto.assign = FALSE)
+data.TXN <- to.monthly(data.TXN)
+ret.TXN <- Return.calculate(data.TXN$data.TXN.Adjusted)
+
+# Intutive Surgical
+data.ISRG <- getSymbols("ISRG", from = "2012-12-31", to = "2015-12-31", auto.assign = FALSE)
+data.ISRG <- to.monthly(data.ISRG)
+ret.ISRG <- Return.calculate(data.ISRG$data.ISRG.Adjusted)
+
+
+## Calculate Monthly Return
+
+Ret.monthly <- cbind(ret.MSFT, ret.TSLA, ret.GOOGL, ret.TXN, ret.ISRG)
+Ret.monthly <- Ret.monthly[-1,]
+head(Ret.monthly)
+
+mat.ret<-matrix(Ret.monthly,nrow(Ret.monthly))
+colnames(mat.ret)<-c("MSFT.Ret", "TSLA.Ret", "GOOGL.Ret", "TXN.Ret", "ISRG.Ret")
+head(mat.ret)
+
+# Step 2: Calculate Variance-Covariance(VCOV) Matrix of Returns
+VCOV<-cov(mat.ret)
+VCOV
+
+# Step 3: Construct the Target Portfolio Return Vector
+
+avg.ret<-matrix(apply(mat.ret,2,mean))
+colnames(avg.ret)<-paste("Avg.Ret")
+rownames(avg.ret)<-paste(c("MSFT","TSLA","GOOGL","TXN","ISRG"))
+avg.ret
+
+min.ret<-min(avg.ret)
+min.ret
+
+max.ret<-max(avg.ret)
+max.ret
+
+increments=100
+tgt.ret<-seq(min.ret,max.ret,length=increments)
+head(tgt.ret)
+
+tail(tgt.ret)
+
+# Step 4: Construct Dummy Portfolio Standard DeviationVector
+tgt.sd<-rep(0,length=increments)
+tgt.sd
+
+#Step 5: Construct Dummy Portfolio Weights Vector
+wgt<-matrix(0,nrow=increments,ncol=length(avg.ret))
+head(wgt)
+
+# Step 6: Run the quadprog Optimizer
+
+for (i in 1:increments){
+  Dmat<-2*VCOV
+  dvec<-c(rep(0,length(avg.ret)))
+  Amat<-cbind(rep(1,length(avg.ret)),avg.ret,
+              diag(1,nrow=ncol(Ret.monthly)))
+  bvec<-c(1,tgt.ret[i],rep(0,ncol(Ret.monthly)))
+  soln<-solve.QP(Dmat,dvec,Amat,bvec=bvec,meq=2)
+  tgt.sd[i]<-sqrt(soln$value)
+  wgt[i,]<-soln$solution
+}
+
+colnames(wgt)<-paste(c("wgt.MSFT", "wgt.TSLA", "wgt.GOOGL", "wgt.TXN", "wgt.ISRG"))
+wgt[1,2]<-0
+wgt[nrow(wgt),1]<-0
+head(wgt)
+
+# Step 7: Combine Portfolio Returns, Portfolio Standard Deviations, and Portfolio Weights
+tgt.port<-data.frame(cbind(tgt.ret,tgt.sd,wgt))
+head(tgt.port)
+
+# Step 8: Identify the Minimum Variance Portfolio
+minvar.port<-subset(tgt.port,tgt.port$tgt.sd==min(tgt.port$tgt.sd))
+minvar.port
+
+# Step 9: Identify the Tangency Portfolio
+riskfree = 0.0000583
+tgt.port$Sharpe<-(tgt.port$tgt.ret-riskfree)/tgt.port$tgt.sd
+head(tgt.port)
+
+tangency.port<-subset(tgt.port,tgt.port$Sharpe==max(tgt.port$Sharpe))
+tangency.port
+
+# Step 10: Identify Efficient Portfolios
+eff.frontier<-subset(tgt.port,tgt.port$tgt.ret>=minvar.port$tgt.ret)
+head(eff.frontier)
+
+# Step 11: Plot theMVEfficient Frontier
+plot(x=tgt.sd, xlab="Portfolio Risk", y=tgt.ret, ylab="Portfolio Return", col="gray40",
+     main="Mean-Variance Efficient Frontier of Five Assets
+     Based on the Quadratic Programming Approach")
+abline(h=0,lty=1)
+points(x=minvar.port$tgt.sd,y=minvar.port$tgt.ret,pch=17,cex=3)
+points(x=tangency.port$tgt.sd,y=tangency.port$tgt.ret,pch=19,cex=3)
+points(x=eff.frontier$tgt.sd,y=eff.frontier$tgt.ret, col ="red" )
+```
+
+# Portfolio Return
+```{r}
+portfolio <- Ret.monthly
+head(portfolio)
+port.ret <- Return.portfolio(portfolio, weights = c(0.09933573, 0.04291118,0.2046812,0.4837758,0.1692961), rebalance_on = "quarters")
+head(port.ret)
+
+# Cumulative Return
+Return.cumulative(port.ret)
+```
+
+# Annualized standard deviation
+```{r}
+
+returns <- cbind(ret.MSFT, ret.TSLA, ret.GOOGL, ret.TXN, ret.ISRG)
+returns <- returns[-1,]
+names(returns) <- c("MSFT.ret", "TSLA.ret", "GOOGL.ret", "TXN.ret", "ISRG.ret")
+head(returns)
+
+#Weight and Transpose weight matrix
+WGT.asset<-c(0.09933573, 0.04291118,0.2046812,0.4837758,0.1692961)
+WGT.asset<-matrix(WGT.asset,1)
+WGT.asset
+
+tWGT.asset<-t(WGT.asset)
+tWGT.asset
+
+#Constructing Variance-Covariance Matrix
+mat.Ret<-as.matrix(returns)
+VCOV.asset<-cov(mat.Ret)*252
+VCOV.asset
+
+#Portfolio Risk
+mat.varasset<-WGT.asset %*% VCOV.asset %*% tWGT.asset
+mat.sdasset<-sqrt(mat.varasset)
+mat.sdasset    #multi asset annualized std dev
+
+```
+# Historical VaR
+```{r}
+head(returns)
+
+#Calculating the current asset value
+ret.cum.MSFT <- Return.cumulative(returns$MSFT.ret)
+ret.cum.MSFT
+
+ret.cum.TSLA <- Return.cumulative(returns$TSLA.ret)
+ret.cum.TSLA
+
+ret.cum.GOOGL <- Return.cumulative(returns$GOOGL.ret)
+ret.cum.GOOGL
+
+ret.cum.TXN <- Return.cumulative(returns$TXN.ret)
+ret.cum.TXN
+
+ret.cum.ISRG <- Return.cumulative(returns$ISRG.ret)
+ret.cum.ISRG
+
+val_investent <- WGT.asset*1000000 #If we had 1 million, this is the distribution of investment according to effective frontier
+val_investent
+
+
+MSFT.val  <- val_investent[,1] * ( 1 + ret.cum.MSFT)
+MSFT.val
+
+TSLA.val  <- val_investent[,2] * ( 1 + ret.cum.TSLA)
+TSLA.val
+
+GOOGL.val <- val_investent[,3] * ( 1 + ret.cum.GOOGL)
+GOOGL.val
+
+TXN.val   <- val_investent[,4] * ( 1 + ret.cum.TXN)
+TXN.val
+
+ISRG.val <- val_investent[,5] * ( 1 + ret.cum.ISRG)
+ISRG.val
+
+last.idx <- c(MSFT.val, TSLA.val, GOOGL.val, TXN.val, ISRG.val)
+sum(last.idx)
+
+#Calculated simulated return
+sim.portPnL <- last.idx[1] * returns$MSFT.ret + last.idx[2] * returns$TSLA.ret + last.idx[3] * returns$GOOGL.ret + last.idx[4] * returns$TXN.ret + last.idx[5] * returns$ISRG.ret
+names(sim.portPnL) <- "Port.PnL"
+head(sim.portPnL)
+
+
+```
+
+#Historical VaR at 1% and 5%
+```{r}
+VaR01.Historical=quantile(-sim.portPnL$Port.PnL,0.99)
+VaR01.Historical 
+
+VaR05.Historical=quantile(-sim.portPnL$Port.PnL,0.95)
+VaR05.Historical 
+```
+# Historical Excess Shortfall
+```{r}
+#Identify Simulated Portfolio Losses in Excess of VaR
+ES.PnL <-sim.portPnL$Port.PnL
+ES.PnL$dummy01<-ifelse(ES.PnL$Port.PnL< (- VaR01.Historical) ,1,0)
+ES.PnL$dummy05<-ifelse(ES.PnL$Port.PnL< (-VaR05.Historical) ,1,0)
+head(ES.PnL)
+
+#Extract Portfolio Losses in Excess of VaR and Compute Average of Losses in Excess of VaR
+shortfall01<-subset(ES.PnL,ES.PnL$dummy01==1)
+shortfall05<-subset(ES.PnL,ES.PnL$dummy05==1)
+ES01.Historical<- -mean(shortfall01$Port.PnL)
+ES01.Historical
+
+ES05.Historical<- -mean(shortfall05$Port.PnL)
+ES05.Historical
+
+```
+#CAPM
+```{r}
+
+head(port.ret)
+
+port.csv <- cbind(index(port.ret), data.frame(port.ret))
+head(port.csv)
+
+port<-port.csv
+names(port)<-c("date", "port.ret")
+head(port)
+
+nrow(port)
+
+
+#Step 2:LOAD MARKET DATA 
+
+data.GSPC <- getSymbols("^GSPC", from = "2012-12-31", to = "2015-12-31", auto.assign = FALSE)
+data.GSPC <- to.monthly(data.GSPC)
+mkt.ret <- Return.calculate(data.GSPC$data.GSPC.Adjusted)
+mkt.ret <- mkt.ret[-1,]
+head(mkt.ret)
+nrow(mkt.ret)
+
+#Step 3: Load Risk Free return
+getSymbols("DGS3MO",src = 'FRED', return.class = "xts")
+rf <- DGS3MO
+rf[1:5,]
+tail(rf)
+
+#Apply to.monthly Command to Identify FirstYield for Each Month
+rf.monthly<-to.monthly(rf)
+rf.monthly[1:3,]
+
+#Convert Opening Annualized Yield for Each Month Into a Monthly Yield
+options(scipen="100")
+rf.monthly<-(1+rf.monthly[,1]/100)^(1/12)-1
+rf.monthly[c(1:3,nrow(rf.monthly)),]
+
+#Subset Data to January 2011 Through December 2016
+rf.sub<-subset(rf.monthly, index(rf.monthly) >= as.yearmon("Jan 2013") & index(rf.monthly) <= as.yearmon("Dec 2015"))
+rf.sub[c(1:3,nrow(rf.sub)),]
+
+nrow(rf.sub)
+
+# Step 4: Combine all the returns 
+combo <- cbind(data.frame(mkt.ret),data.frame(rf.sub), port$port.ret)
+names(combo)<-paste(c("mkt.ret","rf","port.ret"))
+head(combo)
+
+# Step 5: Calculate excess portfolio and market return 
+combo$exret<-combo$port.ret - combo$rf
+combo$exmkt<-combo$mkt.ret - combo$rf
+head(combo)
+
+# Step 6: Run Regression of Excess Firm Return on Excess Market Return
+CAPM<-lm(exret~exmkt, data = combo)
+summary(CAPM)
+
+beta <- summary(CAPM)$coefficients[2]
+beta
+
+adj.beta<-(2/3)*beta+(1/3)*1
+adj.beta
+
+```
+
+##CAPM - alpha
+* CAPM Alpha model is used to find the contribution of the fund manager to the performance of the fund.
+* Thus we need to find whether the manager's contribution is worth more than just passively investing in the index.
+* For this we see alpha of the manager as a measure this outperformance.
+* Alpha of a portfolio can be calculated by using the excess returnform of the CAPM
+* Regression controls for the sensitivity of the portfolio's return to its benchmark
+* Thus any return which is not accounted in the market is attributed to the manager's contribution
+* If alpha is positive and statistically significant, the manager is taken to have provided positive value
+* Alpha of the portfolio is the intercept term from the regression output
+* The intercept is equal to 0.012004, which translates to a monthly return of 1.2%
+* This alpha is statistically significant at the 5% level, which is also the conventional level of significance used in practice
+
+TO sum up everything, if our hypothetical portfolio gives us returns, the manager provided an
+incremental return of 1.2% per month beyond that of what is expected from its sensitivity to
+the benchmark.
+
+##CAPM - Beta
+* The beta of a portfolio calculates the sensitivity of the portfolio's return to the movement of the overall market.
+* Beta capture the systematic risk. Systematic risk is the portion of a security's risk that cannot be diversified away and, as such, it is commonly thought of as the level of risk that investors are compensated from taking on.
+* The results of the CAPM regression show that the CAPM beta is 0.953663. This beta of 0.953663 can then be used in the CAPM to calculate, say, the cost of equity for the company.
+* This means that if the market goes up by 1 %, we expect our portfolio to go up by only 0.95 %. However, if the market goes down by 1 %, we expect our portfolio to only go down by 0.95 %. A beta less than one is consistent with betas of defensive stocks as these stocks are less affected by adverse market movements.
+
+##Calculate Adjusted Beta
+* Generally speaking, betas that are above the market beta of one tend to go down in the long-term, while betas that are below the market beta of one tend to go up in the long-term
+* Since Betas are used to calculate the cost of equity, they should be adjusted to reflect the market Beta.
+* After adjustement the Beta is coming out to be  0.9691088.
+
+
+# French Fama 3 factor model
+
+```{r}
+#Step 1: Import Portfolio Returns Data
+#Already done
+
+#Step 2: Import Fama-French Data Retrieved FromKen French's Website
+FF.raw<-read.csv(file="F-F_Research_Data_Factors.csv")
+head(FF.raw)
+tail(FF.raw)
+FF.raw$date <- seq(as.Date("1926-07-01"), as.Date("2017-08-31"),by="months")
+FF.data<-subset(FF.raw, FF.raw$date>="2013-01-01" & FF.raw$date<="2015-12-31")
+names(FF.data) <- c("date", "exmkt", "SMB", "HML", "rf")
+FF.data$date <- as.yearmon(FF.data$date,"%Y-%m-%d")
+head(FF.data)
+tail(FF.data)
+
+#Step 3: Combine FF.data with portfolio
+FF.data<-cbind(FF.data,data.frame(port))
+FF.data$exmkt <- FF.data$exmkt/100
+FF.data$SMB <- FF.data$SMB/100
+FF.data$HML <- FF.data$HML/100
+FF.data$rf <- FF.data$rf/100
+head(FF.data)
+
+#Step 4: create excess portfolio return
+FF.data$exret <- FF.data$port.ret-FF.data$rf
+head(FF.data)
+
+#Step 5: Run Regression Using Fama-French Factors
+FF.reg<-lm(exret~exmkt+SMB+HML,data=FF.data)
+summary(FF.reg)
+
+#Step 6: compare with CAPM model
+CAPM<-lm(exret~exmkt, data = FF.data)
+summary(CAPM)
+
+# Comparing beta, p-value of the beta, and adjusted R-squared
+betas<-rbind( cbind(summary(FF.reg)$coefficient[2], summary(FF.reg)$coefficient[14], summary(FF.reg)$adj.r.squared), cbind(summary(CAPM)$coefficient[2], summary(CAPM)$coefficient[8], summary(CAPM)$adj.r.squared))
+
+colnames(betas)<-paste(c("Beta","p-Value","Adj. R-Squared"))
+rownames(betas)<-paste(c("Fama-French","CAPM"))
+betas
+
+```
+# F-F Model
+* suggests other factors may need to be added to help explain the remaining variation in asset returns unexplained by the market.
+* The betas and p-values suggest that the returns of our portfolio is sensitive to the changes in the market.
+* The CAPM beta was high at 0.94 but F-F beta is a bit higher at 0.95.
+* Since FF is a three-factor model, the calculation of the cost of equity has to be with all three factors.
+* The output shows that FF regression is a slightly better model than the CAPM in explaining the variation in our portfolio's returns based on having a higher Adjusted R-Squared.
+
+#Write a function for bond evaluation on non-coupon payment dates.
+```{r}
+
+
+# Bond Evaluation on non-coupon payment dates
+
+settle.date<-as.Date("2014-01-08")
+next.coupon<-as.Date("2014-12-08")
+mat.date<-as.Date("2017-12-08")
+cpn.pmts<-4
+coupon.freq = 1
+yield=0.018
+par = 1000
+coupon = 0.0
+
+bondval <- function(coupon, par, yield, coupon.freq, cpn.pmts, settle.date, next.coupon, mat.date)
+{
+days.next.cpn<-as.numeric((next.coupon-settle.date))
+days.next.cpn
+
+
+days.cpn.per<-360/coupon.freq
+days.cpn.per
+
+days.last.cpn<-days.cpn.per-days.next.cpn
+days.last.cpn
+
+yield.period=yield
+yield.period
+pv.principal<-par/(1+(yield.period))^(cpn.pmts-1+(days.next.cpn/days.cpn.per))
+pv.principal
+coupon.period=coupon/coupon.freq
+bond.cf<-rep(coupon.period * par, times=cpn.pmts, length.out=NA, each=1)
+
+bond.cf<-data.frame(bond.cf)
+bond.cf
+bond.cf$period<-c(1:cpn.pmts)
+bond.cf
+bond.cf$disc<-(1+yield.period)^(bond.cf$period-1+(days.next.cpn/days.cpn.per))
+bond.cf
+bond.cf$value<-bond.cf$bond.cf/bond.cf$disc
+bond.cf
+pv.coupons<-sum(bond.cf$value)
+pv.coupons
+interest<- -(par * (coupon.period) * (days.last.cpn/days.cpn.per))
+interest
+bond.value<-pv.principal+pv.coupons+interest
+bond.value
+}
+
+bondval(coupon, par, yield, coupon.freq, cpn.pmts, settle.date, next.coupon, mat.date)
+
+
+
+####################Reinforcing this in the standard BondPrice function
+
+bondprc<-function(coupon,maturity,yield,par,coupon.freq){
+  periods=maturity*coupon.freq
+  coupon.period=coupon/coupon.freq
+  yield.period=yield/coupon.freq
+  bond.coupon<-rep(coupon.period,times=periods,length.out=NA,each=1)
+  bond.df<-as.data.frame(bond.coupon)
+  for (i in 1:periods) {
+    bond.df$cf[i]=par*coupon.period
+    bond.df$period[i]=i
+    bond.df$yield[i]=yield.period
+    }
+  bond.df$cf[periods]=bond.df$cf[periods]+par
+  bond.df$PV=bond.df$cf/((1+bond.df$yield)^bond.df$period)
+  value=sum(bond.df$PV)
+  value
+}
+
+
+coupon = 0
+maturity1 = 5
+maturity2 = 25
+yield = c(.06, .07, .08, .0850, .0890, .0899, .09, .0901, .0910, .0950, .10, .11, .12)
+par = 1000
+coupon.freq = 2
+
+pv1 <- c()
+pv2 <- c()
+
+for (i in 1:length(yield)){
+  pv1 <- c(pv1, bondprc(coupon,maturity1,yield[i],par,coupon.freq))
+  pv2 <- c(pv2, bondprc(coupon,maturity2,yield[i],par,coupon.freq))
+}
+
+price <- data.frame(pv1, pv2)
+names(price) = c(paste0(coupon*100, "%/",maturity1), paste0(coupon*100, "%/",maturity2))
+price <- cbind(price, pv1, pv2)
+names(price)[1:2] = c(paste0(coupon*100, "%/",maturity1), paste0(coupon*100, "%/",maturity2))
+price
+
+
+
+
+```
+
+#What is binomial OPM. Write a function to for binomial OPM ?
+
+* Binomial model is a lattice-based or tree-based model that allows us to model the path of the underlying asset's price in discrete time steps.
+* The binomial option pricing model uses an iterative procedure, allowing for the specification of nodes, or points in time, during the time span between the valuation date and the option's expiration date. The model reduces possibilities of price changes, and removes the possibility for arbitrage.
+* The Binomial Model is said to converge to the Black-Scholes-Merton OPM when the time increments approaches infinity. 
+* Using the Binomial Model Function, we can see the effect of increasing the time increments
+
+
+
+```{r}
+## function for Binomian OPM. we give x= 1 if its a call, else x = -1 if its a put
+EuroCRR<- function(S,K,T,r,sigma,n,type){
+ x=NA
+ if (type=="call") x=1
+ if (type=="put") x=-1
+ if (is.na(x)) stop("Option Type can only be call or put")
+ dt=T/ n
+ u=exp(sigma*sqrt(dt))
+ d=1/ u
+ p=((1+r*dt)-d)/ (u-d)
+ disc<- (1+r*dt)
+ OptVal<- x*(S*u^(0:n)*d^(n:0)-K)
+ OptVal=ifelse(OptVal<0,0,OptVal)
+ for (j in seq(from=n-1,to=0,by=-1))
+ for (i in 0:j)
+ OptVal[i+1]=(p*OptVal[i+2]+(1-p)*OptVal[i+1])/disc
+ value=OptVal[1]
+ results<- rbind(u,d,p,value)
+ results
+}
+
+EuroCRR(398.79,395,0.2219178,0.0007,0.3259855,2,"call")
+
+EuroCRR(398.79,395,0.2219178,0.0007,0.3259855,100,"call")
+
+EuroCRR(398.79,395,0.2219178,0.0007,0.3259855,1000,"call")
+
+#We can do a similar analysis with put options
+EuroCRR(398.79,395,0.2219178,0.0007,0.3259855,2,"put")
+
+EuroCRR(398.79,395,0.2219178,0.0007,0.3259855,100,"put")
+
+EuroCRR(398.79,395,0.2219178,0.0007,0.3259855,1000,"put")
+
+##confirming the answer with longer method
+
+S=398.79
+K=395
+TTM=0.2219178
+r=0.0007
+sigma=0.3259855
+n=2
+dt=TTM/n
+dt
+disc=(1+r * dt)
+disc
+u=exp(sigma * sqrt(dt))
+u
+d=1/u
+d
+p=((1+r * dt)-d)/(u-d)
+p
+
+UP<- u^(0:n)
+UP
+
+DOWN<- d^(n:0)
+DOWN
+
+terminal<- S * UP * DOWN
+terminal
+
+terminal.optval<-ifelse(terminal-K<0,0,terminal-K)
+terminal.optval
+
+for (j in seq(from=n-1,to=0,by=-1)) for (i in 0:j) terminal.optval[i+1]= (p * terminal.optval[i+2]+(1-p) * terminal.optval[i+1])/disc
+terminal.optval
+
+call.optval<-terminal.optval[1]
+call.optval
+
+
+
+```
+ 
